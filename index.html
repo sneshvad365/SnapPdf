@@ -422,26 +422,41 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:22px; h
 
 <script>
 // ── PERSISTENCE (IndexedDB) ──
+var _db = null;
+
 function openDB(cb) {
+  if (_db) { cb(_db); return; }
   var req = indexedDB.open('snappdf', 1);
   req.onupgradeneeded = function(e) { e.target.result.createObjectStore('data'); };
-  req.onsuccess   = function(e) { cb(e.target.result); };
-  req.onerror     = function()  { cb(null); };
+  req.onsuccess = function(e) { _db = e.target.result; cb(_db); };
+  req.onerror   = function()  { cb(null); };
 }
+
 function saveImagesToDB() {
   openDB(function(db) {
     if (!db) return;
-    db.transaction('data','readwrite').objectStore('data').put(selectedImages, 'images');
+    var tx    = db.transaction('data', 'readwrite');
+    var store = tx.objectStore('data');
+    store.put(JSON.parse(JSON.stringify(selectedImages)), 'images');
+    tx.onerror = function(e) { console.warn('DB save error:', e.target.error); };
   });
 }
+
 function loadImagesFromDB(cb) {
   openDB(function(db) {
     if (!db) { cb([]); return; }
-    var req = db.transaction('data','readonly').objectStore('data').get('images');
+    var req = db.transaction('data', 'readonly').objectStore('data').get('images');
     req.onsuccess = function(e) { cb(e.target.result || []); };
     req.onerror   = function()  { cb([]); };
   });
 }
+
+// Save whenever the app goes to background — fires reliably on Android
+// when the user presses Home or switches apps, before the process is suspended.
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'hidden') saveImagesToDB();
+});
+window.addEventListener('pagehide', function() { saveImagesToDB(); });
 
 // ── STATE ──
 var selectedImages = [];
