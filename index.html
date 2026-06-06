@@ -1025,6 +1025,62 @@ function setupCanvas() {
   canvas.width  = Math.round(iw * canvasScale);
   canvas.height = Math.round(ih * canvasScale);
   drawEditor();
+  attachCanvasEvents(canvas);
+}
+
+// ── CANVAS POINTER EVENTS ──
+var _canvasEventsAttached = false;
+function attachCanvasEvents(canvas) {
+  if (_canvasEventsAttached) return;
+  _canvasEventsAttached = true;
+
+  // Find which corner (in display coords) is closest to the pointer.
+  // Returns index 0-3 or -1 if none is within HANDLE_RADIUS.
+  function hitCorner(cx, cy) {
+    var best = -1, bestD = HANDLE_RADIUS * HANDLE_RADIUS;
+    corners.forEach(function(c, i) {
+      var dx = c.x * canvasScale - cx;
+      var dy = c.y * canvasScale - cy;
+      var d2 = dx*dx + dy*dy;
+      if (d2 < bestD) { bestD = d2; best = i; }
+    });
+    return best;
+  }
+
+  // Convert a client-space point to canvas-space, accounting for
+  // the canvas element's position on screen.
+  function clientToCanvas(clientX, clientY) {
+    var r = canvas.getBoundingClientRect();
+    // canvas may be CSS-scaled; compute the ratio
+    var scaleX = canvas.width  / r.width;
+    var scaleY = canvas.height / r.height;
+    return {
+      x: (clientX - r.left) * scaleX,
+      y: (clientY - r.top)  * scaleY
+    };
+  }
+
+  canvas.addEventListener('pointerdown', function(e) {
+    e.preventDefault();
+    var pt = clientToCanvas(e.clientX, e.clientY);
+    dragging = hitCorner(pt.x, pt.y);
+    if (dragging >= 0) canvas.setPointerCapture(e.pointerId);
+  }, { passive: false });
+
+  canvas.addEventListener('pointermove', function(e) {
+    if (dragging < 0) return;
+    e.preventDefault();
+    var pt = clientToCanvas(e.clientX, e.clientY);
+    // Clamp to image bounds and convert back to image coords
+    corners[dragging] = {
+      x: Math.max(0, Math.min(currentImg.naturalWidth,  pt.x / canvasScale)),
+      y: Math.max(0, Math.min(currentImg.naturalHeight, pt.y / canvasScale))
+    };
+    drawEditor();
+  }, { passive: false });
+
+  canvas.addEventListener('pointerup',     function() { dragging = -1; });
+  canvas.addEventListener('pointercancel', function() { dragging = -1; });
 }
 
 // ── DRAW EDITOR ──
@@ -1156,6 +1212,7 @@ function closeCropEditor() {
   document.getElementById('cropOverlay').classList.remove('visible');
   currentImg = null;
   currentEditIndex = -1;
+  _canvasEventsAttached = false;
 }
 
 
