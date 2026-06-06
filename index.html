@@ -469,6 +469,7 @@ var cvReady = false;
 var currentImg = null;       // Image object (full resolution)
 var currentFileName = '';
 var canvasScale = 1;         // ratio: canvas display px / actual image px
+var currentEditIndex = -1;   // index in selectedImages being re-cropped (-1 = new image)
 
 // Corner handles in IMAGE coordinates (full resolution)
 // Order: TL, TR, BR, BL
@@ -1111,12 +1112,12 @@ function applyCrop() {
       var outCanvas = document.createElement('canvas');
       outCanvas.width = outW; outCanvas.height = outH;
       cv.imshow(outCanvas, warped);
-      selectedImages.push({ name: currentFileName,
-                            dataUrl: outCanvas.toDataURL('image/jpeg', 0.95),
-                            cropped: true });
+      _saveToImages({ name: currentFileName,
+                      dataUrl: outCanvas.toDataURL('image/jpeg', 0.95),
+                      cropped: true });
     } catch(e) {
       console.warn('Warp error:', e.message);
-      selectedImages.push({ name: currentFileName, dataUrl: currentImg.src, cropped: false });
+      _saveToImages({ name: currentFileName, dataUrl: currentImg.src, cropped: false });
     } finally {
       if (warped) warped.delete();
       if (M)      M.delete();
@@ -1125,24 +1126,36 @@ function applyCrop() {
       if (src)    src.delete();
     }
   } else {
-    selectedImages.push({ name: currentFileName, dataUrl: currentImg.src, cropped: false });
+    _saveToImages({ name: currentFileName, dataUrl: currentImg.src, cropped: false });
   }
 
   renderThumbs();
   closeCropEditor();
 }
 
+// Replace at currentEditIndex if re-cropping, otherwise push.
+function _saveToImages(entry) {
+  if (currentEditIndex >= 0) {
+    selectedImages[currentEditIndex] = entry;
+  } else {
+    selectedImages.push(entry);
+  }
+}
+
 function cancelCrop() {
-  if (currentImg) {
+  // Only add the raw image when it's a brand-new capture, not when re-cropping.
+  if (currentImg && currentEditIndex < 0) {
     selectedImages.push({ name: currentFileName, dataUrl: currentImg.src, cropped: false });
     renderThumbs();
   }
+  currentEditIndex = -1;
   closeCropEditor();
 }
 
 function closeCropEditor() {
   document.getElementById('cropOverlay').classList.remove('visible');
   currentImg = null;
+  currentEditIndex = -1;
 }
 
 
@@ -1209,6 +1222,14 @@ function lightboxStep(dir) {
 function updateLightbox() {
   document.getElementById('lightboxImg').src = selectedImages[lightboxIndex].dataUrl;
   document.getElementById('lightboxCounter').textContent = (lightboxIndex+1) + ' / ' + selectedImages.length;
+}
+
+function openCropFromLightbox() {
+  var idx = lightboxIndex;
+  closeLightbox();
+  currentEditIndex = idx;
+  currentFileName  = selectedImages[idx].name;
+  openEditorWithCorners(selectedImages[idx].dataUrl, null);
 }
 
 // Swipe support — attached after DOM ready
@@ -1723,6 +1744,10 @@ function downloadBlob(blob, fname) {
   <img id="lightboxImg" src="" alt="" onclick="event.stopPropagation()" />
   <div class="lightbox-nav" onclick="event.stopPropagation()">
     <button onclick="lightboxStep(-1)">&lt; Prev</button>
+    <button onclick="openCropFromLightbox()"
+            style="background:var(--accent);color:#000;border-color:var(--accent);">
+      &#9986; Crop
+    </button>
     <button onclick="lightboxStep(1)">Next &gt;</button>
   </div>
 </div>
