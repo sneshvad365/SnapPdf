@@ -1371,11 +1371,11 @@ function resizeImage(dataUrl, scale, quality, applyBW, callback) {
         cum += hist[v];
         if (cum / n > 0.08) { whitePoint = v; break; }
       }
-      var scale = 255 / Math.max(whitePoint, 1);
+      var brightScale = 255 / Math.max(whitePoint, 1);
 
       // Stretch brightness, then hard-threshold: >180 → white, <80 → black.
       for (var i = 0; i < d.length; i += 4) {
-        var val = Math.min(255, Math.round(d[i] * scale));
+        var val = Math.min(255, Math.round(d[i] * brightScale));
         val = val > 180 ? 255 : val < 80 ? 0 : val;
         d[i] = d[i+1] = d[i+2] = val;
       }
