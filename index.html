@@ -421,6 +421,28 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:22px; h
 <canvas id="cvCanvas" style="display:none"></canvas>
 
 <script>
+// ── PERSISTENCE (IndexedDB) ──
+function openDB(cb) {
+  var req = indexedDB.open('snappdf', 1);
+  req.onupgradeneeded = function(e) { e.target.result.createObjectStore('data'); };
+  req.onsuccess   = function(e) { cb(e.target.result); };
+  req.onerror     = function()  { cb(null); };
+}
+function saveImagesToDB() {
+  openDB(function(db) {
+    if (!db) return;
+    db.transaction('data','readwrite').objectStore('data').put(selectedImages, 'images');
+  });
+}
+function loadImagesFromDB(cb) {
+  openDB(function(db) {
+    if (!db) { cb([]); return; }
+    var req = db.transaction('data','readonly').objectStore('data').get('images');
+    req.onsuccess = function(e) { cb(e.target.result || []); };
+    req.onerror   = function()  { cb([]); };
+  });
+}
+
 // ── STATE ──
 var selectedImages = [];
 var orientation = 'p';
@@ -465,6 +487,10 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
 
 // ── FALLBACK CAMERA INPUT (no HTTPS / getUserMedia unavailable) ──
 document.addEventListener('DOMContentLoaded', function() {
+  loadImagesFromDB(function(saved) {
+    if (saved && saved.length) { selectedImages = saved; renderThumbs(); }
+  });
+
   var fb = document.getElementById('cameraFallback');
   if (!fb) return;
   fb.addEventListener('change', function(e) {
@@ -1220,6 +1246,7 @@ function renderThumbs() {
   document.getElementById('shareBtn').disabled = !has;
   document.getElementById('ocrBtn').disabled = !has;
   document.getElementById('successBanner').classList.remove('visible');
+  saveImagesToDB();
 }
 
 function addDragHandlers(wrap) {
