@@ -1513,9 +1513,21 @@ function sharePDF(blob, fname) {
 }
 
 // ── OCR ──
-var ocrWorker    = null;
+var ocrWorker      = null;
 var ocrCurrentLang = '';
-var ocrTexts     = [];
+var ocrTexts       = [];
+
+// Race a promise against a timeout. Rejects with Error('timeout') if exceeded.
+// Pass ms=0 to disable the timeout.
+function withTimeout(promise, ms) {
+  if (!ms) return promise;
+  return Promise.race([
+    promise,
+    new Promise(function(_, reject) {
+      setTimeout(function() { reject(new Error('timeout')); }, ms);
+    })
+  ]);
+}
 
 async function runOcr() {
   if (!selectedImages.length) return;
@@ -1568,30 +1580,56 @@ async function runOcr() {
       ocrCurrentLang = lang;
     }
 
-    var n = selectedImages.length;
+    var n       = selectedImages.length;
+    var timeoutMs = parseInt(document.getElementById('ocrTimeout').value) * 1000;
+
     for (var i = 0; i < n; i++) {
       var pageNum = i + 1;
       subEl.textContent = n > 1 ? 'Page ' + pageNum + ' of ' + n : 'Reading document...';
       setProgress(65 + Math.round((i / n) * 33), 'Reading page ' + pageNum + '...');
 
-      var result = await ocrWorker.recognize(selectedImages[i].dataUrl);
-      var text   = (result.data.text || '').trim();
+      var text = '';
+      var timedOut = false;
+      try {
+        var result = await withTimeout(ocrWorker.recognize(selectedImages[i].dataUrl), timeoutMs);
+        text = (result.data.text || '').trim();
+      } catch(err) {
+        if (err.message === 'timeout') {
+          timedOut = true;
+          // Terminate and recreate the worker so the next page starts clean
+          try { await ocrWorker.terminate(); } catch(e) {}
+          ocrWorker = null;
+          ocrCurrentLang = '';
+        } else {
+          throw err;
+        }
+      }
+
       ocrTexts.push(text);
 
       var section = document.createElement('div');
       if (n > 1) {
         var lbl = document.createElement('div');
         lbl.className   = 'ocr-page-label';
-        lbl.textContent = 'Page ' + pageNum;
+        lbl.textContent = 'Page ' + pageNum + (timedOut ? ' — timed out' : '');
         section.appendChild(lbl);
       }
       var ta = document.createElement('textarea');
       ta.className = 'ocr-textarea' + (text ? '' : ' ocr-empty');
-      ta.value     = text || '(No text detected)';
+      ta.value     = timedOut ? '(Timed out — try a higher timeout or simpler image)'
+                              : text || '(No text detected)';
       ta.readOnly  = true;
       ta.spellcheck = false;
       section.appendChild(ta);
       results.appendChild(section);
+
+      // If worker was terminated due to timeout, recreate it for the next page
+      if (timedOut && i < n - 1) {
+        var lang = document.getElementById('ocrLangSelect').value;
+        setProgress(65 + Math.round(((i + 1) / n) * 33), 'Restarting OCR engine...');
+        ocrWorker = await Tesseract.createWorker(lang);
+        ocrCurrentLang = lang;
+      }
     }
 
     setProgress(100, 'Done');
@@ -1690,7 +1728,18 @@ function downloadBlob(blob, fname) {
       <div class="ocr-title">Extracted Text</div>
       <div class="ocr-sub" id="ocrSub">Reading document...</div>
     </div>
-    <button class="ocr-close" onclick="closeOcr()">&#x2715;</button>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:12px;color:var(--muted);white-space:nowrap;">Timeout</span>
+        <select id="ocrTimeout" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'DM Sans',sans-serif;font-size:12px;padding:4px 6px;outline:none;">
+          <option value="15">15s</option>
+          <option value="30" selected>30s</option>
+          <option value="60">60s</option>
+          <option value="0">None</option>
+        </select>
+      </div>
+      <button class="ocr-close" onclick="closeOcr()">&#x2715;</button>
+    </div>
   </div>
   <div class="ocr-progress-wrap" id="ocrProgressWrap">
     <div class="status-msg" id="ocrStatus">Loading OCR engine...</div>
