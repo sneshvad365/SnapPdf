@@ -1281,6 +1281,29 @@ function updateLightbox() {
   document.getElementById('lightboxCounter').textContent = (lightboxIndex+1) + ' / ' + selectedImages.length;
 }
 
+// ── ROTATE ──
+// Rotates the image at selectedImages[idx] by deg degrees (90 or -90)
+// and saves the result back in place.
+function rotateImage(idx, deg) {
+  var img = new Image();
+  img.onload = function() {
+    var swap = (deg === 90 || deg === -90);
+    var w = swap ? img.naturalHeight : img.naturalWidth;
+    var h = swap ? img.naturalWidth  : img.naturalHeight;
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    var ctx = c.getContext('2d');
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(deg * Math.PI / 180);
+    ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+    selectedImages[idx].dataUrl = c.toDataURL('image/jpeg', 0.95);
+    renderThumbs();
+    updateLightbox();
+    saveImagesToDB();
+  };
+  img.src = selectedImages[idx].dataUrl;
+}
+
 function openCropFromLightbox() {
   var idx = lightboxIndex;
   closeLightbox();
@@ -1801,10 +1824,14 @@ function downloadBlob(blob, fname) {
   <img id="lightboxImg" src="" alt="" onclick="event.stopPropagation()" />
   <div class="lightbox-nav" onclick="event.stopPropagation()">
     <button onclick="lightboxStep(-1)">&lt; Prev</button>
+    <button onclick="rotateImage(lightboxIndex,-90)" title="Rotate left"
+            style="padding:10px 16px;">&#8635;</button>
     <button onclick="openCropFromLightbox()"
             style="background:var(--accent);color:#000;border-color:var(--accent);">
       &#9986; Crop
     </button>
+    <button onclick="rotateImage(lightboxIndex,90)" title="Rotate right"
+            style="padding:10px 16px;">&#8634;</button>
     <button onclick="lightboxStep(1)">Next &gt;</button>
   </div>
 </div>
