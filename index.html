@@ -1576,7 +1576,7 @@ function generatePDF(shareMode) {
       processed.forEach(function(img, i) {
         if (i > 0) doc.addPage();
         var wm = img.width*25.4/96, hm = img.height*25.4/96;
-        var fit = Math.min(aw/wm, ah/hm, 1);
+        var fit = Math.min(aw/wm, ah/hm); // no cap — always fill the page
         doc.addImage(img.dataUrl,'JPEG', margin+(aw-wm*fit)/2, margin+(ah-hm*fit)/2, wm*fit, hm*fit);
       });
       setProgress(95,'');
