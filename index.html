@@ -1365,6 +1365,10 @@ function selectOption(groupId, btn) {
 // applyBW: if true, applies grayscale + contrast filter for printer-friendly output
 function resizeImage(dataUrl, scale, quality, applyBW, callback) {
   var img = new Image();
+  img.onerror = function() {
+    // If the image fails to load, skip B&W and pass the original through.
+    callback({ dataUrl: dataUrl, width: 0, height: 0 });
+  };
   img.onload = function() {
     var w = Math.round(img.naturalWidth * scale);
     var h = Math.round(img.naturalHeight * scale);
@@ -1373,40 +1377,36 @@ function resizeImage(dataUrl, scale, quality, applyBW, callback) {
     var ctx = c.getContext('2d');
 
     if (applyBW) {
-      // Apply CSS filter before drawing: grayscale + contrast boost
-      // contrast(1.4) makes text crisp and punchy for printing
       ctx.filter = 'grayscale(1) contrast(1.4)';
     }
     ctx.drawImage(img, 0, 0, w, h);
     ctx.filter = 'none';
 
-    // If B&W: normalise brightness then threshold to clean black/white.
-    if (applyBW) {
-      var imageData = ctx.getImageData(0, 0, w, h);
-      var d = imageData.data;
-      var n = d.length / 4;
+    try {
+      if (applyBW) {
+        var imageData = ctx.getImageData(0, 0, w, h);
+        var d = imageData.data;
+        var n = d.length / 4;
 
-      // Build a luminance histogram (image is already greyscale so R=G=B).
-      var hist = new Uint32Array(256);
-      for (var i = 0; i < d.length; i += 4) hist[d[i]]++;
+        var hist = new Uint32Array(256);
+        for (var j = 0; j < d.length; j += 4) hist[d[j]]++;
 
-      // Find the white point: the value at the 92nd percentile.
-      // Pixels brighter than this are considered "paper white".
-      // Scaling so this value → 255 fixes grey backgrounds from uneven lighting.
-      var cum = 0, whitePoint = 255;
-      for (var v = 255; v >= 0; v--) {
-        cum += hist[v];
-        if (cum / n > 0.08) { whitePoint = v; break; }
+        var cum = 0, whitePoint = 255;
+        for (var v = 255; v >= 0; v--) {
+          cum += hist[v];
+          if (cum / n > 0.08) { whitePoint = v; break; }
+        }
+        var brightScale = 255 / Math.max(whitePoint, 1);
+
+        for (var k = 0; k < d.length; k += 4) {
+          var val = Math.min(255, Math.round(d[k] * brightScale));
+          val = val > 180 ? 255 : val < 80 ? 0 : val;
+          d[k] = d[k+1] = d[k+2] = val;
+        }
+        ctx.putImageData(imageData, 0, 0);
       }
-      var brightScale = 255 / Math.max(whitePoint, 1);
-
-      // Stretch brightness, then hard-threshold: >180 → white, <80 → black.
-      for (var i = 0; i < d.length; i += 4) {
-        var val = Math.min(255, Math.round(d[i] * brightScale));
-        val = val > 180 ? 255 : val < 80 ? 0 : val;
-        d[i] = d[i+1] = d[i+2] = val;
-      }
-      ctx.putImageData(imageData, 0, 0);
+    } catch(e) {
+      console.warn('B&W processing failed, using unprocessed image:', e.message);
     }
 
     callback({ dataUrl: c.toDataURL('image/jpeg', quality), width: w, height: h });
@@ -1439,7 +1439,7 @@ function generatePDF(shareMode) {
     setProgress(Math.round((i/selectedImages.length)*70), label+(i+1)+' of '+selectedImages.length+'...');
     resizeImage(selectedImages[i].dataUrl, scale, quality, bwMode, function(result) {
       processed.push(result);
-      processNext(i+1);
+      setTimeout(function() { processNext(i+1); }, 0);
     });
   }
 
