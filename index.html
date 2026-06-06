@@ -1391,11 +1391,7 @@ function resizeImage(dataUrl, scale, quality, applyBW, callback) {
     c.width = w; c.height = h;
     var ctx = c.getContext('2d');
 
-    if (applyBW) {
-      ctx.filter = 'grayscale(1) contrast(1.4)';
-    }
     ctx.drawImage(img, 0, 0, w, h);
-    ctx.filter = 'none';
 
     try {
       if (applyBW) {
@@ -1403,9 +1399,18 @@ function resizeImage(dataUrl, scale, quality, applyBW, callback) {
         var d = imageData.data;
         var n = d.length / 4;
 
+        // Pass 1 — convert to greyscale using proper luminance weights,
+        // and build histogram. ctx.filter is unreliable on Android so we
+        // do this entirely in JS.
         var hist = new Uint32Array(256);
-        for (var j = 0; j < d.length; j += 4) hist[d[j]]++;
+        for (var j = 0; j < d.length; j += 4) {
+          var gray = Math.round(0.299 * d[j] + 0.587 * d[j+1] + 0.114 * d[j+2]);
+          d[j] = d[j+1] = d[j+2] = gray;
+          hist[gray]++;
+        }
 
+        // Pass 2 — find white point (92nd percentile) and stretch so that
+        // the page background becomes true white.
         var cum = 0, whitePoint = 255;
         for (var v = 255; v >= 0; v--) {
           cum += hist[v];
@@ -1413,6 +1418,7 @@ function resizeImage(dataUrl, scale, quality, applyBW, callback) {
         }
         var brightScale = 255 / Math.max(whitePoint, 1);
 
+        // Pass 3 — stretch + hard threshold: >180 → white, <80 → black.
         for (var k = 0; k < d.length; k += 4) {
           var val = Math.min(255, Math.round(d[k] * brightScale));
           val = val > 180 ? 255 : val < 80 ? 0 : val;
